@@ -1,0 +1,30 @@
+{
+  "name": "zhin-next",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "zhin chat app",
+  "main": "lib/index.js",
+  "scripts": {
+    "dev": "npx zhin --e src",
+    "compile": "tsc",
+    "clean": "rm -rf ./lib",
+    "build": "npm run clean && npm run compile"
+  },
+  "bin": {
+    "zhin": "./bin.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@zhinjs/directive": "^0.1.1",
+    "js-yaml": "^4.1.0",
+    "log4js": "^6.9.1",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/log4js": "^0.0.33",
+    "@types/node": "^22.10.2",
+    "@types/js-yaml": "^4.0.9",
+    "typescript": "^5.7.2"
+  }
+}
