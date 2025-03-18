@@ -15,11 +15,29 @@ export class Plugin extends EventEmitter{
     parent:Plugin|null=null
     private _app:App|null=null
     get adapters(){
-        return this.#adapters
+        return this.children.reduce((result:Map<string,Adapter>, plugin:Plugin):Map<string,Adapter>=>{
+            return new Map([...result,...plugin.adapters])
+        },this.#adapters)
+    }
+    get bots(){
+        return [...this.adapters.values()].reduce((result:Bot[],adapter:Adapter)=>{
+            return result.concat([...adapter.bots.values()])
+        },[])
     }
     #adapters:Map<string,Adapter>=new Map<string, Adapter>()
     logger:Logger=log4js.getLogger(this.name)
-    directives:Directive[]=[]
+    #middleware:Plugin.Middleware[]=[]
+    get middlewares(){
+        return this.children.reduce((result:Plugin.Middleware[], plugin:Plugin):Plugin.Middleware[]=>{
+            return result.concat(plugin.middlewares)
+        },this.#middleware)
+    }
+    #directives:Directive<[MessageEvent]>[]=[]
+    get directives(){
+        return this.children.reduce((result:Directive<[MessageEvent]>[], plugin:Plugin):Directive<[MessageEvent]>[]=>{
+            return result.concat(plugin.directives)
+        },this.#directives)
+    }
     get app(){
         return this._app
     }
@@ -34,12 +52,9 @@ export class Plugin extends EventEmitter{
         return this
     }
     children:Plugin[]=[]
-    get flatChildren(){
-        return this.children.reduce((result:Plugin[], plugin:Plugin):Plugin[]=>{
-            return result.concat(plugin.flatChildren)
-        },this.children)
+    get sortedChildren(){
+        return this.children.sort((a,b)=>(a.#options.weight||0)-(b.#options.weight||0))
     }
-    middlewares:Plugin.Middleware[]=[]
     get name():string{
         return [this.parent?.name,this.#options?.name]
             .filter(Boolean)
@@ -77,7 +92,6 @@ export class Plugin extends EventEmitter{
         for(const plugin in this.#options.plugins){
             this.plugin(plugin,this.#options.plugins[plugin])
         }
-        this.on('message',this.#matchDirective.bind(this))
         if(this.#options.onMounted){
             this.on('mounted',this.#options.onMounted.bind(this))
         }
@@ -85,21 +99,11 @@ export class Plugin extends EventEmitter{
             this.on('beforeUnmount',this.#options.beforeUnmount.bind(this))
         }
     }
-    async #matchDirective<T extends keyof App.Adapters>(content:string,event:MessageEvent<T>){
-        for(const directive of this.directives){
-            try{
-                const result=await directive.match(content,event)
-                if(result) await event.reply(result)
-            }catch (e){
-                await event.reply((e as Error)?.message)
-            }
-        }
-    }
     directive(name:string,result:string):this
-    directive(name:string,handle:()=>Directive.Awaitable<string|undefined>):this
-    directive(directive:Directive):this
-    directive(...[input,handle]:[Directive]|[string,string|(()=>Directive.Awaitable<string|undefined>)]){
-        const directive=typeof input==='string'?new Directive(input):input
+    directive(name:string,handle:Directive.Callback<[MessageEvent]>):this
+    directive(directive:Directive<[MessageEvent]>):this
+    directive(...[input,handle]:[Directive<[MessageEvent]>]|[string,string|Directive.Callback<[MessageEvent]>]){
+        const directive=typeof input==='string'?new Directive<[MessageEvent]>(input):input
         if(handle) directive.handle(typeof handle==='string'?()=>handle:handle)
         this.directives.push(directive)
         this.logger.info(`Directive "${directive.name}" added`)
@@ -129,10 +133,10 @@ export class Plugin extends EventEmitter{
         this.children.push(plugin)
         plugin.emit('mounted')
         this.logger.info(`Plugin "${plugin.name}" mounted`)
-        const dispose=watchFile(plugin.sourceFile,async ()=>{
+        const dispose=watchFile(plugin.sourceFile,async (event, filename)=>{
             await this.reload(plugin)
         })
-        this.once('beforeUnmount',dispose)
+        plugin.once('beforeUnmount',dispose)
         return this
     }
     async unplugin(name:string){
@@ -174,6 +178,8 @@ export namespace Plugin{
     export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'mark' | 'off'
     export interface Options{
         sourceFile:string
+        // 权重
+        weight?:number
         name:string;
         adapters:Plugin.Adapters
         plugins:Record<string, Plugin>
@@ -184,7 +190,21 @@ export namespace Plugin{
     export type Adapters={
         [P in keyof App.Adapters]?:Constructor<Adapter<P>>
     }
-    export type Middleware=(message:MessageEvent,next:(message:MessageEvent)=>void)=>void
+    export function compose(middlewares:Middleware[]):Compose{
+        return (message)=>{
+            let index=-1
+            const dispatch=(i:number,m=message):void=>{
+                if(i<=index) throw new Error('next() called multiple times')
+                index=i
+                let fn=middlewares[i]
+                if(!fn) return
+                fn(m,dispatch.bind(null,i+1))
+            }
+            return dispatch(0)
+        }
+    }
+    export type Middleware=(message:MessageEvent,next:(message?:MessageEvent)=>void)=>void
+    export type Compose=(message:MessageEvent)=>void
     export interface Lifecycle{
         mounted(this:Plugin): void;
         message(message:MessageEvent,bot:Bot):void;

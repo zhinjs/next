@@ -8,13 +8,12 @@ export abstract class Bot<T extends keyof App.Adapters = keyof App.Adapters> ext
         super()
     }
     abstract sendMessage(receiver:Receiver,content:Segment.Sendable):Promise<void>
-    abstract reply<T=any>(event:T,segments:Segment[]):Promise<void>
     async start(app:App){
-        return new Promise<void>((resolve, reject) => {
+        return new Promise<Bot>((resolve, reject) => {
             const success=()=>{
-                app.logger.info(`bot ${this.id} is ready`)
+                app.logger.info(`bot ${this.adapter}:${this.id} is ready`)
                 this.off('error',error)
-                resolve()
+                resolve(this)
             }
             const error=(e:Error)=>{
                 this.off('ready',success)

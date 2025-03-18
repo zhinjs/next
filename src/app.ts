@@ -4,26 +4,28 @@ import log4js from "log4js";
 import jsYaml from "js-yaml";
 const {getLogger} = log4js
 import {Plugin} from "./plugin";
-import { WithPrefix} from "./types";
+import {ProcessMessage, QueueItem, WithPrefix} from "./types";
 import path from "node:path";
 import {display_path,watchFile, wrapExport} from "./utils";
 import * as fs from "node:fs";
 import {Bot} from "./bot";
-import {Adapter} from "./adapter";
 import {RequestEvent,MessageEvent} from "./event";
 export class App extends Plugin {
     options: App.Options = App.defaultOptions
-    get botList(){
-        return [...this.adapters.values()].reduce((result:Bot[],adapter:Adapter)=>{
-            return result.concat([...adapter.bots.values()])
-        },[])
-    }
     get adapterList(){
         return [...this.adapters.values()]
     }
     get pluginList(){
-        return this.flatChildren
+        const getChildPlugins=(plugin:Plugin):Plugin[]=>{
+            return [plugin,...plugin.children.reduce((result:Plugin[], child:Plugin):Plugin[]=>{
+                return result.concat(getChildPlugins(child))
+            },[])]
+        }
+        return this.children.reduce((result:Plugin[], plugin:Plugin):Plugin[]=>{
+            return result.concat(getChildPlugins(plugin))
+        },[])
     }
+    #queue:QueueItem[]=[]
     constructor(public options_path: string) {
         super({
             name:"Zhin",
@@ -32,12 +34,51 @@ export class App extends Plugin {
         this.app=this;
         this.options = App.defineOptions(App.loadOptions(options_path))
         this.logger.level=this.options.log_level
+        this.middleware(this.handleBotMessage.bind(this))
         this.on('init',this.#loadPlugins.bind(this,this.options.plugins))
         this.on('dispose',watchFile(options_path,this.#checkDiff.bind(this)))
         this.on('ready',this.#startAdapters.bind(this))
+        this.on('message',Plugin.compose(this.middlewares))
+        process.on('message',this.handleProcessMessage.bind(this))
+    }
+    async handleProcessMessage(data:ProcessMessage){
+        switch (data.type){
+            case 'queue':{
+                this.#queue.push(data.body)
+                break
+            }
+        }
+    }
+    async runAction(action:string,payload:any){
+        switch (action){
+            case 'sendMessage':{
+                const {adapter,bot,content,...receiver}=payload
+                return this.pickAdapter(adapter)
+                    .pickBot(bot)
+                    .sendMessage(receiver,content)
+            }
+        }
+    }
+    pickAdapter(name:string){
+        const adapter=this.adapters.get(name)
+        if(!adapter) throw new Error(`Adapter "${name}" not found`)
+        return adapter
+    }
+    async handleBotMessage(event:MessageEvent){
+        const directives=this.directives
+        for(const directive of directives){
+            try{
+                const result=await directive.match(event.data,event)
+                if(result){
+                    event.reply(result)
+                }
+            }catch (e){
+                event.reply((e as Error)?.message)
+            }
+        }
     }
     getLogger(category:string,name:string){
-        const logger=name==='Zhin'?getLogger(`${name}]`):getLogger(`[${category}:${name}]`)
+        const logger=name==='Zhin'?getLogger(`[${name}]`):getLogger(`[${category}:${name}]`)
         logger.level=this.options.log_level
         return logger
     }
@@ -67,6 +108,10 @@ export class App extends Plugin {
         await this.init()
         const listeners = this.listeners('ready')
         await Promise.all(listeners.map(listener=>listener(this)))
+        for(const queue of this.#queue){
+            const {action,payload}=queue
+            return this.runAction(action,payload)
+        }
         process.on('SIGINT', async () => {
             await this.stop()
             process.exit(0)
@@ -75,18 +120,6 @@ export class App extends Plugin {
     async stop(){
         const listeners = this.listeners('dispose')
         await Promise.all(listeners.map(listener=>listener(this)))
-    }
-    get adapters(){
-        const adapters=new Map<string,Adapter>()
-        for(const [name,adapter] of super.adapters){
-            adapters.set(name,adapter)
-        }
-        for(const plugin of this.flatChildren){
-            for(const [name,adapter] of plugin.adapters){
-                adapters.set(name,adapter)
-            }
-        }
-        return adapters
     }
     async #loadPlugins(plugins:string[]) {
         for (let name of plugins) {
@@ -102,7 +135,7 @@ export class App extends Plugin {
     }
     async loadPlugin(name:string):Promise<Plugin|Partial<Plugin.Options>> {
         const maybePath = [
-            ...this.options.plugin_dirs.map(p=>path.join(p,name)),
+            ...this.options.plugin_dirs.map(p=>path.join(path.resolve(process.cwd(),p),name)),
             path.join(App.builtinPluginsDir, name),
             path.join(App.modulesPluginsDir, name)
         ]
@@ -140,7 +173,7 @@ export namespace App {
         init(app:App): void;
         ready(app: App): void;
         dispose(app: App): void;
-        message<K extends keyof Adapters>(content:string, event: MessageEvent<K>): void;
+        message<K extends keyof Adapters>(event: MessageEvent<K>): void;
         request<K extends keyof Adapters>(event: RequestEvent<K>): void;
     }
 

@@ -7,11 +7,16 @@ export abstract class Adapter<K extends keyof App.Adapters=keyof App.Adapters>{
         return [...this.bots.values()]
     }
     protected constructor(public name:K){}
-    abstract createBot(options:App.Adapters[K]):Bot<K>
+    abstract createBot(options:App.Adapters[K]):Promise<Bot<K>>
+    pickBot(account:string){
+        const bot=this.bots.get(account)
+        if(!bot) throw new Error(`bot ${account} not found`)
+        return bot
+    }
     async start(app:App){
         app.logger.info(`starting adapter ${this.name}`)
         const botsOptions=app.options.bots.filter(o=>o.adapter===this.name)
-        return Promise.all(botsOptions.map(options=>this.addBot(options).start(app)))
+        return Promise.all(botsOptions.map(options=>this.startBot(options as unknown as Bot.Options<K>,app)))
     }
     async stop(app:App){
         return Promise.all(this.botList.map(async (bot)=>{
@@ -19,10 +24,10 @@ export abstract class Adapter<K extends keyof App.Adapters=keyof App.Adapters>{
             this.removeBot(bot.id)
         }))
     }
-    addBot(options:App.Adapters[K]):Bot<K>{
-        const bot=this.createBot(options)
+    async startBot(options:App.Adapters[K],app:App):Promise<Bot<K>>{
+        const bot=await this.createBot(options)
         this.bots.set(bot.id,bot)
-        return bot as Bot<K>
+        return await bot.start(app) as Bot<K>
     }
     removeBot(account:string){
         this.bots.delete(account)

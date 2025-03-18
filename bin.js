@@ -25,12 +25,6 @@ const parseOptions = (args) => {
 	return options
 }
 const options = parseOptions(process.argv.slice(2))
-import(`./${options.e || 'lib'}/start`)
-	.then(mod => {
-		if (mod.default) {
-			mod.default(options.r||[])
-		} else {
-			mod(options.r || [])
-		}
-	})
-	.catch(console.error)
+const {createZhin}=await import(`./${options.e || 'lib'}/zhin`)
+createZhin(options.config||options.c)
+	.start()

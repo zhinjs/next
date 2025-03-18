@@ -1,12 +1,14 @@
-import {App} from "../app";
-import {Bot, Receiver} from "../bot";
-import {Client, Config,segment as icqqSegment} from "@icqqjs/icqq";
+import {Config,segment as icqqSegment,Client} from "@icqqjs/icqq";
 import path from "node:path";
-import {definePlugin} from "../plugin";
-import {Adapter} from "../adapter";
-import {segment, Segment} from "../segment";
-import {MessageEvent,RequestEvent} from "../event";
-
+import {App} from "../../app";
+import {Bot, Receiver} from "../../bot";
+import {definePlugin} from "../../plugin";
+import {Adapter} from "../../adapter";
+import {segment, Segment} from "../../segment";
+import {MessageEvent,RequestEvent} from "../../event";
+function fromSegment(data:Segment.Sendable){
+    return icqqSegment.fromCqcode(segment.toString(Segment.format(data)))
+}
 export class IcqqBot extends Bot<'icqq'> {
     #account: string
     #password?: string
@@ -20,24 +22,37 @@ export class IcqqBot extends Bot<'icqq'> {
                 break
         }
     }
-    async reply(event:any,segments:Segment[]){
-        await event.reply(segment.toString(segments))
-    }
     constructor(public options: App.Adapters['icqq']) {
         const {account, password, ...other} = {
             ...defaultOptions, ...options
         }
-        super('icqq',account, new Client(other))
+        const client=new Client(other)
+        super('icqq',account, client)
         this.#account=account
         this.#password = password
         this.on('start',this.online.bind(this))
         this.on('stop',this.offline.bind(this))
-        this.on('ready',(app)=>{
-            this.internal.on('message',(event)=>{
-                app.emit('message',event.toCqcode(),new MessageEvent('icqq',this,event))
+        this.once('ready',(app)=>{
+            client.on('message',(event)=>{
+                app.emit('message',MessageEvent.from.call(this,{
+                    from_id: `${event.message_type==='group'?event.group_id:event.sender.user_id}`,
+                    from_type:event.message_type,
+                    from_name:event.message_type==='group'?event.group_name:event.sender.nickname,
+                    user_id: `${event.sender.user_id}`,
+                    user_name: event.sender.nickname,
+                },async (data)=>{
+                    const result= await event.reply(fromSegment(data))
+                    return result.message_id
+                },event.toCqcode()))
             })
-            this.internal.on('request',event=>{
-                app.emit('request',new RequestEvent('icqq',this,event))
+            client.on('request',event=>{
+                app.emit('request',RequestEvent.from.call(this,{
+                    from_id: `${event.request_type==='group'?event.group_id:event.user_id}`,
+                    from_type:event.request_type,
+                    from_name:event.request_type==='group'?event.group_name:event.nickname,
+                    user_id: `${event.user_id}`,
+                    user_name: event.nickname,
+                },event.approve.bind(event),event.seq))
             })
         })
     }
@@ -98,12 +113,12 @@ export class IcqqBot extends Bot<'icqq'> {
 export const defaultOptions: Partial<App.Adapters['icqq']> = {
     data_dir: path.join(process.cwd(), 'data')
 }
-export class IcqqAdapter extends Adapter{
+export class IcqqAdapter extends Adapter<'icqq'>{
     constructor() {
         super('icqq');
     }
-    createBot(options: App.Adapters[keyof App.Adapters]): Bot<keyof App.Adapters> {
-        return new IcqqBot(options);
+    async createBot(options: App.Adapters['icqq']): Promise<Bot<'icqq'>> {
+        return new IcqqBot(options)
     }
 }
 export default definePlugin({
@@ -112,7 +127,7 @@ export default definePlugin({
         icqq:IcqqAdapter
     }
 })
-declare module '../app' {
+declare module '../../app' {
     namespace App {
         interface Adapters {
             icqq: Omit<Config, 'log_level'> & {
