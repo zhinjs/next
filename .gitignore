@@ -1,2 +1,6 @@
 /package-lock.json
-/zhin.config.yml
+/node_modules
+/*.config.yml
+/lib
+/data
+/logs

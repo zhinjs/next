@@ -14,14 +14,15 @@
   "bin": {
     "zhin": "./bin.js"
   },
+  "packageManager": "pnpm@9.0.2",
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@icqqjs/icqq": "^1.5.11",
+    "@icqqjs/icqq": "latest",
     "@resvg/resvg-js": "^2.6.2",
     "@zhinjs/directive": "^0.1.5",
+    "@zhin.js/logger":"0.1.1",
     "js-yaml": "^4.1.0",
-    "log4js": "^6.9.1",
     "tsx": "^4.19.2"
   },
   "devDependencies": {

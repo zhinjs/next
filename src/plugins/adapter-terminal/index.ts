@@ -1,64 +1,75 @@
-import {Adapter} from "../../adapter";
-import {App} from "../../app";
-import {Bot, Receiver} from "../../bot";
-import {Segment} from "../../segment";
-import {MessageEvent} from "../../event";
-import {Logger} from "log4js";
-import {definePlugin} from "../../plugin";
+import { Adapter } from "../../adapter";
+import { Account, Receiver } from "../../account";
+import { usePlugin } from "../../plugin";
+import { Segment } from "../../segment";
+import { MessageEvent } from "../../event";
+import EventEmitter from "events";
+export interface TerminalOptions {
+  title: string;
+}
+const plugin=usePlugin();
+export class TerminalAdapter extends Adapter<TerminalAccount> {
+  constructor(accountList: TerminalOptions[] = []) {
+    super("terminal", accountList);
+  }
 
-export class TerminalAdapter extends Adapter<'terminal'> {
-    constructor() {
-        super('terminal');
-    }
-
-    async createBot(options: App.Adapters['terminal']): Promise<Bot<'terminal'>> {
-        return new TerminalBot(options)
-    }
+  async createAccount(options: TerminalOptions) {
+    return new TerminalAccount(options);
+  }
 }
-export class TerminalBot extends Bot<'terminal'> {
-    logger?:Logger
-    constructor(public options: App.Adapters['terminal']) {
-        super('terminal',`${options.title}`, process);
-        this.on('start',(app:App)=>{
-            this.logger=app.getLogger('terminal',`${process.pid}`)
-            this.internal.stdin.on('data',(data:Buffer)=>{
-                const content=data.toString().trim()
-                const event=new MessageEvent(this,content,async (msg)=>{
-                    await this.sendMessage({
-                        from_id: 'developer',
-                        from_type: 'private',
-                        user_id: `developer`,
-                        user_name: this.options.title,
-                        from_name: this.options.title
-                    }, msg)
-                    return ''
-                })
-                this.logger?.debug(`[private:developer] ${content}`)
-                app.emit('message',event)
-            })
-            this.emit('ready',app)
-        })
+export class TerminalAccount extends EventEmitter implements Account<TerminalOptions> {
+  #dataHandler?: (data: Buffer) => void;
+  #receiverCache?: Receiver; // 缓存 receiver 对象
+  
+  get account_id(): string {
+    return `terminal-${process.pid}`;
+  }
+  get adapter(): "terminal" {
+    return "terminal";
+  }
+  constructor(public options: TerminalOptions) {
+    super();
+    // 预创建 receiver 对象
+    this.#receiverCache = {
+      from_id: "developer",
+      from_type: "private",
+      user_id: "developer",
+      user_name: this.options.title,
+      from_name: this.options.title,
+    };
+  }
+  async start(): Promise<void> {
+      this.#dataHandler = (data: Buffer) => {
+        const content = data.toString().trim();
+        const event = new MessageEvent(this, content, async (msg) => {
+          await this.sendMessage(this.#receiverCache!, msg);
+          return "";
+        });
+        plugin.logger.info(`[private:developer] ${content}`);
+        plugin.dispatch("message", event);
+      };
+      process.stdin.on("data", this.#dataHandler);
+  }
+  async stop(): Promise<void> {
+    if(this.#dataHandler) {
+      process.stdin.off("data", this.#dataHandler);
+      this.#dataHandler = undefined;
     }
-    async sendMessage(receiver: Receiver, content: Segment.Sendable){
-        this.logger?.debug(`[${receiver.from_type}:${receiver.from_id}] ${content}`)
-        this.internal.stdout.write(`${content}\n`)
-    }
+    this.removeAllListeners();
+  }
+  async sendMessage(receiver: Receiver, content: Segment.Sendable) {
+    plugin.logger.debug(
+      `[${receiver.from_type}:${receiver.from_id}] ${content}`
+    );
+    process.stdout.write(`${content}\n`);
+  }
 }
-declare module '../../app' {
-    namespace App {
-        interface Adapters {
-            terminal:  {
-                title: string
-            }
-        }
-        interface Bots {
-            terminal:typeof process
-        }
+const adapter = new TerminalAdapter([{title: "Terminal Adapter" }]);
+plugin.adapter(adapter);
+declare module "../../plugin" {
+  namespace Plugin {
+    interface Adapters {
+      terminal: TerminalAdapter;
     }
+  }
 }
-export default definePlugin({
-    name:'adapter-terminal',
-    adapters:{
-        terminal:TerminalAdapter
-    }
-})

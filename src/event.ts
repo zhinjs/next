@@ -1,6 +1,6 @@
 import { Segment} from "./segment";
-import {App} from "./app";
-import {Bot} from "./bot";
+import { Plugin } from "./plugin";
+import { Adapter } from "./adapter";
 export namespace Event{
     export interface Location{
         from_type: string,
@@ -30,25 +30,25 @@ export namespace Event{
         (approve:boolean,reason?:string):Promise<boolean>
     }
 }
-export class MessageEvent<A extends keyof App.Adapters=keyof App.Adapters> extends Event<'message',string>{
+export class MessageEvent<A extends Adapter=Adapter> extends Event<'message',string>{
     get adapter(){
-        return this.bot.adapter
+        return this.account.adapter
     }
 
-    constructor(public bot:Bot<A>,data:string,public reply:Event.Reply){
+    constructor(public account: Adapter.IAccount<A>, data:string, public reply:Event.Reply){
         super('message',data)
     }
-    static from<A extends keyof App.Adapters>(this:Bot<A>,sender:Event.Location & Event.Operator,reply:Event.Reply,content:string){
+    static from<A extends Adapter>(this: Adapter.IAccount<A>,sender:Event.Location & Event.Operator,reply:Event.Reply,content:string){
         const messageEvent = new MessageEvent(this,content,reply)
         Object.assign(messageEvent, sender)
         return messageEvent
     }
 }
-export class RequestEvent<A extends keyof App.Adapters=keyof App.Adapters,D=any,B=Bot<A>> extends Event<'request',D>{
-    constructor(public bot:B,data:D,public approve:Event.Approve){
+export class RequestEvent<A extends Adapter=Adapter,D=any,B=Adapter.IAccount<A>> extends Event<'request',D>{
+    constructor(public account:B,data:D,public approve:Event.Approve){
         super('request',data)
     }
-    static from<A extends keyof App.Adapters>(this:Bot<A>,sender:Event.Location & Event.Operator,approve:Event.Approve,data:any){
+    static from<A extends Adapter>(this: Adapter.IAccount<A>,sender:Event.Location & Event.Operator,approve:Event.Approve,data:any){
         const requestEvent = new RequestEvent(this,data,approve)
         Object.assign(requestEvent, sender)
         return requestEvent

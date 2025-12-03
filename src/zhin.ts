@@ -1,9 +1,7 @@
 import path from "node:path";
 import {fileURLToPath} from 'url'
-
 import {ChildProcess, fork} from "node:child_process";
 import {ProcessMessage, QueueItem} from "./types";
-import {display_path} from "./utils";
 const currentExt=path.extname(fileURLToPath(import.meta.url))
 const currentDir=path.dirname(fileURLToPath(import.meta.url))
 export class Zhin{
@@ -42,11 +40,11 @@ export class Zhin{
         const child=fork(entry,args,{
             stdio:'inherit',
             env:{
+                ...process.env,
                 START_TIME:Date.now().toString(),
                 RESTART_TIMES:'0'
             }
         })
-        console.log(`create process "${key}" pid:${child.pid} with entry ${display_path(entry)}`)
         if(key!=='zhin'){
             child.on('message',(message:ProcessMessage)=>{
                 const {type,body}=message
