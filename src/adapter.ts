@@ -1,10 +1,25 @@
-import { Plugin } from "./plugin";
+import { EventEmitter } from "events";
 import { Account } from "./account";
+import { AccountError, AdapterError, ErrorCode } from "./error";
+import { Hooks } from "./hooks";
 
-export abstract class Adapter<A extends Account = Account> {
+export abstract class Adapter<
+  A extends Account = Account,
+> extends EventEmitter<Adapter.LifeCycle> {
   accounts: Map<string, A> = new Map<string, A>();
   #cachedAccountList?: A[];
   #accountsDirty = true;
+  public binding?: Hooks;
+  get logger() {
+    if (!this.binding) {
+      throw new AdapterError(
+        "Adapter 未绑定 Hooks，无法获取 logger",
+        ErrorCode.ADAPTER_NOT_BOUND,
+        { adapterName: this.name }
+      );
+    }
+    return this.binding.logger;
+  }
   get accountList() {
     if (!this.#accountsDirty && this.#cachedAccountList)
       return this.#cachedAccountList;
@@ -15,11 +30,25 @@ export abstract class Adapter<A extends Account = Account> {
   protected constructor(
     public name: string,
     public config: Account.IOptions<A>[]
-  ) {}
+  ) {
+    super();
+    this.on("message", (...args) => {
+      this.binding?.dispatch("message", ...args);
+    });
+    this.on("request", (...args) => {
+      this.binding?.dispatch("request", ...args);
+    });
+  }
   abstract createAccount(options: Account.IOptions<A>): Promise<A>;
   pickAccount(account: string) {
     const acc = this.accounts.get(account);
-    if (!acc) throw new Error(`account ${account} not found`);
+    if (!acc) {
+      throw new AccountError(
+        `账号 ${account} 未找到`,
+        ErrorCode.ACCOUNT_NOT_FOUND,
+        { accountId: account, adapterName: this.name }
+      );
+    }
     return acc;
   }
   async start() {
@@ -45,26 +74,16 @@ export abstract class Adapter<A extends Account = Account> {
   }
 }
 export namespace Adapter {
-  export interface EventMap {}
-  export type Construct<T extends Adapter = Adapter> = new (
-    config: Account.IOptions<IAccount<T>>[]
-  ) => T;
-  export type Creator<T extends Adapter> = (
-    config: Account.IOptions<IAccount<T>>[]
-  ) => T;
-  export type IAccount<T> = T extends Adapter<infer A> ? A : never;
-  export type Factory<T extends Adapter> = Construct<T> | Creator<T>;
-  export function create<T extends Adapter>(
-    factory: Factory<T>,
-    ...args: Account.IOptions<IAccount<T>>[]
-  ): T {
-    if (
-      typeof factory === "function" &&
-      /^class\s/.test(Function.prototype.toString.call(factory))
-    ) {
-      return new (factory as Construct<T>)(args);
-    } else {
-      return (factory as Creator<T>)(args);
-    }
+  export const Registry = new Map<string, Factory>();
+  export function register(name: string, factory: Factory<Adapter>) {
+    Registry.set(name, factory);
   }
+  export interface LifeCycle {
+    message: [any];
+    request: [any];
+  }
+  export type IAccount<T> = T extends Adapter<infer A> ? A : never;
+  export type Factory<T extends Adapter = Adapter> = new (
+    config: Account.IOptions<IAccount<T>>[]
+  ) => T;
 }

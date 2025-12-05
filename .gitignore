@@ -1,6 +1,44 @@
+# Dependencies
 /package-lock.json
 /node_modules
-/*.config.yml
+
+# Build output
 /lib
+/dist
+
+# Runtime data
 /data
 /logs
+
+# Config files (keep example)
+/*.config.yml
+!zhin.config.example.yml
+
+# Environment variables
+/.env
+.env.*
+!.env.example
+
+# IDE
+.idea
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage
+*.lcov
+
+# Temporary files
+*.tmp
+*.temp
+.cache
+test-*.mjs
+test-*.cjs

@@ -1,8 +1,8 @@
-import { usePlugin } from "../plugin";
+import { useHooks } from "../hooks";
 import { Directive } from "@zhinjs/directive";
 import { MessageEvent } from "../event";
 
-const plugin = usePlugin();
+const {root,directive} = useHooks();
 
 // 性能优化：预编译格式化函数
 const formatMemory = (bytes: number) => (bytes / 1048576).toFixed(2) + " MB";
@@ -21,9 +21,9 @@ const status = new Directive<[MessageEvent]>("zt").handle(() => {
   // 性能优化：使用数组join代替字符串拼接
   return [
     HEADER,
-    `Plugin Count: ${plugin.root.children.length}`,
-    `Adapter Count: ${plugin.root.adapters.size}`,
-    `Account Count: ${plugin.root.accounts.length}`,
+    `Plugin Count: ${root.children.length}`,
+    `Adapter Count: ${root.adapters.size}`,
+    `Account Count: ${root.root.accounts.length}`,
     `Uptime: ${uptime.toFixed(2)}s`,
     `Memory Rss: ${formatMemory(memUsage.rss)}`,
     `Memory Heap: ${formatMemory(memUsage.heapUsed)}/${formatMemory(memUsage.heapTotal)}`,
@@ -32,4 +32,4 @@ const status = new Directive<[MessageEvent]>("zt").handle(() => {
   ].join("\n");
 });
 
-plugin.directive(status);
+directive(status);

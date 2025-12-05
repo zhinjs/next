@@ -1,7 +1,9 @@
 import path from "node:path";
+import {config} from 'dotenv'
 import {fileURLToPath} from 'url'
 import {ChildProcess, fork} from "node:child_process";
 import {ProcessMessage, QueueItem} from "./types";
+config();
 const currentExt=path.extname(fileURLToPath(import.meta.url))
 const currentDir=path.dirname(fileURLToPath(import.meta.url))
 export class Zhin{

@@ -1,20 +1,23 @@
-import { Config, segment as icqqSegment, Client } from "@icqqjs/icqq";
+import { Client, Config, segment as icqqSegment } from "@icqqjs/icqq";
 import path from "node:path";
-import { useConfig } from "../../config";
-import { Account, Receiver } from "../../account";
-import { Adapter } from "../../adapter";
-import { segment, Segment } from "../../segment";
-import { MessageEvent, RequestEvent } from "../../event";
-import { usePlugin } from "../../plugin";
-const plugin=usePlugin();
+import { Account, Receiver } from "../account";
+import { Adapter } from "../adapter";
+import { MessageEvent, RequestEvent } from "../event";
+import { segment, Segment } from "../segment";
+// const plugin=useHooks();
 function fromSegment(data: Segment.Sendable) {
   return icqqSegment.fromCqcode(segment.toString(Segment.format(data)));
 }
-const accountList=useConfig('icqq.config',[] as IcqqOptions[]);
+declare module "../types" {
+  interface Config {
+    icqq?: IcqqOptions[];
+  }
+}
 export interface IcqqOptions extends Config {
   uin: number;
   password?: string;
-};
+}
+// @ts-ignore - 类型实例化过深但运行时正常
 export class IcqqAccount extends Client implements Account<IcqqOptions> {
   #account: string;
   #password?: string;
@@ -40,10 +43,10 @@ export class IcqqAccount extends Client implements Account<IcqqOptions> {
   get account_id(): string {
     return this.#account;
   }
-  get adapter(): "icqq" {
-    return "icqq";
-  }
-  constructor(public options: IcqqOptions) {
+  constructor(
+    public adapter: IcqqAdapter,
+    public options: IcqqOptions
+  ) {
     const { uin, password, ...other } = {
       ...defaultOptions,
       ...options,
@@ -78,58 +81,52 @@ export class IcqqAccount extends Client implements Account<IcqqOptions> {
       });
     });
     this.on("message", (event) => {
-      plugin.dispatch(
-        "message",
-        MessageEvent.from.call(
-          this,
-          {
-            from_id: `${
-              event.message_type === "group"
-                ? event.group_id
-                : event.sender.user_id
-            }`,
-            from_type: event.message_type,
-            from_name:
-              event.message_type === "group"
-                ? event.group_name
-                : event.sender.nickname,
-            user_id: `${event.sender.user_id}`,
-            user_name: event.sender.nickname,
-          },
-          async (data) => {
-            const result = await event.reply(fromSegment(data));
-            return result.message_id;
-          },
-          event.toCqcode()
-        )
+      const messageEvent = MessageEvent.from(
+        this,
+        {
+          from_id: `${
+            event.message_type === "group"
+              ? event.group_id
+              : event.sender.user_id
+          }`,
+          from_type: event.message_type,
+          from_name:
+            event.message_type === "group"
+              ? event.group_name
+              : event.sender.nickname,
+          user_id: `${event.sender.user_id}`,
+          user_name: event.sender.nickname,
+        },
+        async (data) => {
+          const result = await event.reply(fromSegment(data));
+          return result.message_id;
+        },
+        event.toCqcode()
       );
+      this.adapter.emit("message", messageEvent);
     });
     this.on("request", (event) => {
-      plugin.dispatch(
-        "request",
-        RequestEvent.from.call(
-          this,
-          {
-            from_id: `${
-              event.request_type === "group" ? event.group_id : event.user_id
-            }`,
-            from_type: event.request_type,
-            from_name:
-              event.request_type === "group"
-                ? event.group_name
-                : event.nickname,
-            user_id: `${event.user_id}`,
-            user_name: event.nickname,
-          },
-          event.approve.bind(event),
-          event.seq
-        )
+      const requestEvent = RequestEvent.from(
+        this,
+        {
+          from_id: `${
+            event.request_type === "group" ? event.group_id : event.user_id
+          }`,
+          from_type: event.request_type,
+          from_name:
+            event.request_type === "group" ? event.group_name : event.nickname,
+          user_id: `${event.user_id}`,
+          user_name: event.nickname,
+        },
+        event.approve.bind(event),
+        event.seq
       );
+      this.adapter.emit("request", requestEvent);
     });
     await this.login(Number(this.#account), this.#password);
     return new Promise<void>((resolve, reject) => {
       this.once("system.online", () => {
-        plugin.logger.info(`account ${this.#account} started`);
+        this.logger.info(`account ${this.#account} started`);
         resolve();
       });
       this.once("system.error", (e) => reject(e));
@@ -161,18 +158,17 @@ export const defaultOptions: Partial<IcqqOptions> = {
 };
 export class IcqqAdapter extends Adapter<IcqqAccount> {
   constructor(accountList: IcqqOptions[] = []) {
-    super('icqq',accountList);
+    super("icqq", accountList);
   }
   async createAccount(options: IcqqOptions): Promise<IcqqAccount> {
-    return new IcqqAccount(options);
+    return new IcqqAccount(this, options);
   }
 }
-declare module "../../plugin" {
-  namespace Plugin {
+declare module "../hooks" {
+  namespace Hooks {
     interface Adapters {
-      icqq: IcqqAdapter;
+      icqq: typeof IcqqAdapter;
     }
   }
 }
-const adapter=new IcqqAdapter(accountList);
-plugin.adapter(adapter,);
+Adapter.register("icqq", IcqqAdapter);

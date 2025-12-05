@@ -1,0 +1,38 @@
+# Zhin Next 配置示例
+# 复制此文件为 zhin.config.yml 并根据需要修改
+
+# 日志级别
+# 0=trace, 1=debug, 2=info, 3=warn, 4=error, 5=fatal
+log_level: ${LOG_LEVEL:-1}
+
+# 插件目录
+plugin_dirs:
+  - ${PLUGIN_DIR:-./plugins}
+  - ./node_modules/@zhin/plugins
+
+# 账号配置
+accounts:
+  # Terminal 适配器（用于本地测试）
+  - adapter: terminal
+    title: ${BOT_NAME:-Local Terminal}
+
+  # ICQQ 适配器（QQ 机器人）
+  # - adapter: icqq
+  #   uin: ${QQ_UIN}
+  #   password: ${QQ_PASSWORD}
+  #   platform: 5  # 1=安卓手机, 2=aPad, 3=安卓手表, 4=MacOS, 5=iPad
+
+# 启用的插件
+plugins:
+  - status # 系统状态插件
+  # - example   # 示例插件
+  # 添加更多插件...
+
+# 管理员列表（用于权限控制）
+admins:
+  - admin
+  # - 123456789
+# 自定义配置示例
+# custom:
+#   api_key: ${API_KEY}
+#   endpoint: https://api.example.com
